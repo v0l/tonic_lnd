@@ -327,7 +327,7 @@ mod tls {
             for (c, p) in self.certs.iter().zip(certs.iter()) {
                 if *p.0 != **c {
                     return Err(TLSError::General(
-                        "Server certificates do not match ours".to_string()
+                        "Server certificates do not match ours".to_string(),
                     ));
                 }
             }
