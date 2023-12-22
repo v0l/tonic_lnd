@@ -22,6 +22,7 @@ fn main() -> std::io::Result<()> {
         "verrpc/verrpc.proto",
         "routerrpc/router.proto",
         "invoicesrpc/invoices.proto",
+        "staterpc/state.proto",
     ];
 
     let proto_paths: Vec<_> = protos.iter().map(|proto| dir.join(proto)).collect();
