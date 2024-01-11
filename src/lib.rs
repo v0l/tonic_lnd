@@ -333,8 +333,15 @@ mod tls {
             _ocsp_response: &[u8],
             _now: SystemTime,
         ) -> Result<ServerCertVerified, TLSError> {
-            let mut certs = intermediates.iter().collect::<Vec<&Certificate>>();
-            certs.push(end_entity);
+            let mut certs = intermediates
+                .iter()
+                .map(|c| c.0.clone())
+                .collect::<Vec<Vec<u8>>>();
+            certs.push(end_entity.0.clone());
+            certs.sort();
+
+            let mut our_certs = self.certs.clone();
+            our_certs.sort();
 
             if self.certs.len() != certs.len() {
                 return Err(TLSError::General(format!(
@@ -343,8 +350,8 @@ mod tls {
                     certs.len()
                 )));
             }
-            for (c, p) in self.certs.iter().zip(certs.iter()) {
-                if *p.0 != **c {
+            for (c, p) in our_certs.iter().zip(certs.iter()) {
+                if *p != *c {
                     return Err(TLSError::General(
                         "Server certificates do not match ours".to_string(),
                     ));
