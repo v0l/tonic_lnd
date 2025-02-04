@@ -239,7 +239,7 @@ where
     let macaroon = load_macaroon(macaroon_file).await?;
 
     let svc = InterceptedService::new(
-        hyper::Client::builder().build(connector),
+        hyper::Client::builder().http2_only(true).build(connector),
         MacaroonInterceptor { macaroon },
     );
     let uri =
