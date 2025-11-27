@@ -66,7 +66,7 @@ async fn main() {
 
 ## MSRV
 
-1.65.0
+1.85.0
 
 ## License
 

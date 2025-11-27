@@ -1,8 +1,8 @@
 [package]
 name = "fedimint-tonic-lnd"
-version = "0.3.0"
-edition = "2021"
-rust-version = "1.65.0"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.85.0"
 description = "An async library implementing LND RPC via tonic and prost. Forked from https://github.com/Kixunil/tonic_lnd"
 homepage = "https://github.com/fedimint/tonic_lnd"
 repository = "https://github.com/fedimint/tonic_lnd"
@@ -35,30 +35,27 @@ all = [
   "staterpc",
 ]
 default = ["all"]
-tls-ring = ["tonic/tls-ring"]
-tls-aws-lc = ["tonic/tls-aws-lc"]
 tracing = []
+
+tls-ring = ["rustls/ring", "tonic/tls-ring", "hyper-rustls/ring"]
+tls-aws-lc-rs = ["rustls/aws-lc-rs", "tonic/tls-aws-lc", "hyper-rustls/aws-lc-rs"]
 
 [dependencies]
 hex = "0.4.3"
-hyper = { version = "1", features = ["client"], default-features = false }
-hyper-util = { version = "0.1.14" }
-prost = "0.13.0"
-rustls = { version = "0.23.0", features = ["std"], default-features = false }
-rustls-pemfile = "1.0.0"
-hyper-rustls = { version = "0.27.7", features = [
-  "http2",
-  "tls12",
-], default-features = false }
-tonic = { version = "0.13.1", features = ["transport"] }
-tokio = { version = "1.32.0", features = ["fs"] }
+rustls = { version = "0.23", default-features = false }
+rustls-pemfile = "2"
+hyper-rustls = { version = "0.27", features = ["http2", "tls12", "rustls-platform-verifier"], default-features = false }
+tonic = { version = "0.14", features = ["channel", "codegen"], default-features = false }
+prost = "0.14"
+tonic-prost = "0.14"
+tokio = { version = "1", features = ["fs"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 
 [build-dependencies]
-tonic-build = "0.13.1"
+tonic-prost-build = "0.14"
 
 [dev-dependencies]
-tokio = { version = "1.7.1", features = ["rt-multi-thread"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 [[example]]
 name = "get_info"

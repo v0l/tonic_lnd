@@ -19,18 +19,23 @@ impl From<InternalConnectError> for ConnectError {
 
 #[derive(Debug)]
 pub(crate) enum InternalConnectError {
+    Connect {
+        address: String,
+        error: Box<dyn std::error::Error + Send + Sync + 'static>,
+    },
     ReadFile {
         file: PathBuf,
         error: std::io::Error,
     },
     ParseCert {
         file: PathBuf,
-        error: std::io::Error,
+        error: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
     InvalidAddress {
         address: String,
         error: Box<dyn std::error::Error + Send + Sync + 'static>,
     },
+    Other(Box<dyn std::error::Error>),
 }
 
 impl fmt::Display for ConnectError {
@@ -38,9 +43,11 @@ impl fmt::Display for ConnectError {
         use InternalConnectError::*;
 
         match &self.internal {
+            Connect { address, error } => write!(f, "failed to connect to {} {}", address, error),
             ReadFile { file, .. } => write!(f, "failed to read file {}", file.display()),
             ParseCert { file, .. } => write!(f, "failed to parse certificate {}", file.display()),
             InvalidAddress { address, .. } => write!(f, "invalid address {}", address),
+            Other(err) => write!(f, "unknown error: {}", err),
         }
     }
 }
@@ -50,9 +57,11 @@ impl std::error::Error for ConnectError {
         use InternalConnectError::*;
 
         match &self.internal {
+            Connect { error, .. } => Some(&**error),
             ReadFile { error, .. } => Some(error),
-            ParseCert { error, .. } => Some(error),
+            ParseCert { error, .. } => Some(&**error),
             InvalidAddress { error, .. } => Some(&**error),
+            Other(err) => Some(&**err),
         }
     }
 }

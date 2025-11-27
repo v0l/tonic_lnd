@@ -27,7 +27,7 @@ fn main() -> std::io::Result<()> {
 
     let proto_paths: Vec<_> = protos.iter().map(|proto| dir.join(proto)).collect();
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_client(true)
         .build_server(false)
         .compile_protos(&proto_paths, &[dir])?;
