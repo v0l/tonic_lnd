@@ -305,7 +305,6 @@ mod tls {
     pub(crate) struct CertVerifier {
         root_store: RootCertStore,
         provider: Arc<CryptoProvider>,
-        supported_algs: WebPkiSupportedAlgorithms,
     }
 
     impl CertVerifier {
