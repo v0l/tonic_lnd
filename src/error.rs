@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::fmt;
 use std::path::PathBuf;
 
@@ -19,23 +20,20 @@ impl From<InternalConnectError> for ConnectError {
 
 #[derive(Debug)]
 pub(crate) enum InternalConnectError {
-    Connect {
-        address: String,
-        error: Box<dyn std::error::Error + Send + Sync + 'static>,
-    },
+    Tonic(tonic::transport::Error),
     ReadFile {
         file: PathBuf,
         error: std::io::Error,
     },
     ParseCert {
         file: PathBuf,
-        error: Box<dyn std::error::Error + Send + Sync + 'static>,
+        error: Box<dyn Error + Send + Sync + 'static>,
     },
     InvalidAddress {
         address: String,
-        error: Box<dyn std::error::Error + Send + Sync + 'static>,
+        error: Box<dyn Error + Send + Sync + 'static>,
     },
-    Other(Box<dyn std::error::Error>),
+    Other(Box<dyn Error>),
 }
 
 impl fmt::Display for ConnectError {
@@ -43,7 +41,7 @@ impl fmt::Display for ConnectError {
         use InternalConnectError::*;
 
         match &self.internal {
-            Connect { address, error } => write!(f, "failed to connect to {} {}", address, error),
+            Tonic(error) => write!(f, "{:?}", error),
             ReadFile { file, .. } => write!(f, "failed to read file {}", file.display()),
             ParseCert { file, .. } => write!(f, "failed to parse certificate {}", file.display()),
             InvalidAddress { address, .. } => write!(f, "invalid address {}", address),
@@ -52,16 +50,24 @@ impl fmt::Display for ConnectError {
     }
 }
 
-impl std::error::Error for ConnectError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+impl Error for ConnectError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
         use InternalConnectError::*;
 
         match &self.internal {
-            Connect { error, .. } => Some(&**error),
+            Tonic(error) => Some(error),
             ReadFile { error, .. } => Some(error),
             ParseCert { error, .. } => Some(&**error),
             InvalidAddress { error, .. } => Some(&**error),
             Other(err) => Some(&**err),
+        }
+    }
+}
+
+impl From<tonic::transport::Error> for ConnectError {
+    fn from(value: tonic::transport::Error) -> Self {
+        Self {
+            internal: InternalConnectError::Tonic(value),
         }
     }
 }

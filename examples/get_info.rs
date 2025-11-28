@@ -9,6 +9,8 @@
 #[tokio::main]
 #[cfg(feature = "lightningrpc")]
 async fn main() {
+    tracing_subscriber::fmt::init();
+
     let mut args = std::env::args_os();
     args.next().expect("not even zeroth arg given");
     let address = args

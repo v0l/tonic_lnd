@@ -3,10 +3,11 @@ pub use tonic;
 
 pub use error::ConnectError;
 use error::InternalConnectError;
+use rustls::crypto::CryptoProvider;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tonic::codegen::InterceptedService;
-use tonic::transport::{Channel, Endpoint};
+use tonic::transport::{Channel, Endpoint, Uri};
 
 type Service = InterceptedService<Channel, MacaroonInterceptor>;
 
@@ -216,24 +217,33 @@ where
     MP: AsRef<Path> + Into<PathBuf> + std::fmt::Debug,
 {
     let macaroon = load_macaroon(macaroon_file).await?;
+    let cert_path = cert_file.into();
+
+    // install a default provider
+    if CryptoProvider::get_default().is_none() {
+        #[cfg(all(feature = "tls-aws-lc-rs", not(feature = "tls-ring")))]
+        rustls::crypto::aws_lc_rs::default_provider()
+            .install_default()
+            .expect("Failed to install aws-lc-rs default crypto");
+        #[cfg(all(feature = "tls-ring", not(feature = "tls-aws-lc-rs")))]
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("Failed to install tls-tonic");
+    }
 
     let connector = hyper_rustls::HttpsConnectorBuilder::new()
-        .with_tls_config(tls::config(cert_file).await?)
-        .https_or_http()
-        .enable_http2()
+        .with_tls_config(tls::config(&cert_path).await?)
+        .https_only()
+        .enable_all_versions()
         .build();
 
-    let channel = Endpoint::from_str(&address)
-        .map_err(|e| InternalConnectError::InvalidAddress {
-            address: address.to_string(),
-            error: Box::new(e),
-        })?
+    let uri = Uri::from_str(&address).map_err(|e| InternalConnectError::InvalidAddress {
+        address: address.to_string(),
+        error: Box::new(e),
+    })?;
+    let channel = Endpoint::new(uri.clone())?
         .connect_with_connector(connector)
-        .await
-        .map_err(|e| InternalConnectError::Connect {
-            address: address.to_string(),
-            error: Box::new(e),
-        })?;
+        .await?;
     let svc = MacaroonInterceptor { macaroon };
 
     let client = Client {
@@ -278,27 +288,28 @@ where
 mod tls {
     use crate::error::{ConnectError, InternalConnectError};
     use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-    use rustls::client::verify_server_cert_signed_by_trust_anchor;
     use rustls::crypto::{CryptoProvider, verify_tls12_signature, verify_tls13_signature};
     use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-    use rustls::server::ParsedCertificate;
     use rustls::{
-        DigitallySignedStruct, Error as TLSError, RootCertStore, SignatureScheme,
-        client::ClientConfig,
+        CertificateError, DigitallySignedStruct, Error as TLSError, KeyLogFile, RootCertStore,
+        SignatureScheme, client::ClientConfig,
     };
     use std::io::{BufReader, Error, ErrorKind};
     use std::{
         path::{Path, PathBuf},
         sync::Arc,
     };
+    use webpki::anchor_from_trusted_cert;
 
     pub(crate) async fn config(
         path: impl AsRef<Path> + Into<PathBuf>,
     ) -> Result<ClientConfig, ConnectError> {
-        Ok(ClientConfig::builder()
+        let mut cfg = ClientConfig::builder()
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(CertVerifier::load(path).await?))
-            .with_no_client_auth())
+            .with_no_client_auth();
+        cfg.key_log = Arc::new(KeyLogFile::new());
+        Ok(cfg)
     }
 
     #[derive(Debug)]
@@ -362,14 +373,17 @@ mod tls {
             _ocsp_response: &[u8],
             now: UnixTime,
         ) -> Result<ServerCertVerified, TLSError> {
-            verify_server_cert_signed_by_trust_anchor(
-                &ParsedCertificate::try_from(end_entity)?,
-                &self.root_store,
-                intermediates,
-                now,
-                &self.provider.signature_verification_algorithms.all,
-            )?;
-            Ok(ServerCertVerified::assertion())
+            let end_trusted = anchor_from_trusted_cert(end_entity).map_err(|_| {
+                TLSError::InvalidCertificate(CertificateError::ApplicationVerificationFailure)
+            })?;
+            for cert in &self.root_store.roots {
+                if end_trusted == *cert {
+                    return Ok(ServerCertVerified::assertion());
+                }
+            }
+            Err(TLSError::InvalidCertificate(
+                CertificateError::ApplicationVerificationFailure,
+            ))
         }
 
         fn verify_tls12_signature(
