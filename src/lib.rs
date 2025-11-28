@@ -7,9 +7,15 @@ use rustls::crypto::CryptoProvider;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tonic::codegen::InterceptedService;
-use tonic::transport::{Channel, Endpoint, Uri};
+use tonic::transport::Uri;
 
-type Service = InterceptedService<Channel, MacaroonInterceptor>;
+type Service = InterceptedService<
+    hyper_util::client::legacy::Client<
+        hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>,
+        tonic::body::Body,
+    >,
+    MacaroonInterceptor,
+>;
 
 /// Convenience type alias for lightning client.
 #[cfg(feature = "lightningrpc")]
@@ -224,63 +230,53 @@ where
         #[cfg(all(feature = "tls-aws-lc-rs", not(feature = "tls-ring")))]
         rustls::crypto::aws_lc_rs::default_provider()
             .install_default()
-            .expect("Failed to install aws-lc-rs default crypto");
+            .expect("Failed to install aws-lc-rs as the default crypto provider");
         #[cfg(all(feature = "tls-ring", not(feature = "tls-aws-lc-rs")))]
         rustls::crypto::ring::default_provider()
             .install_default()
-            .expect("Failed to install tls-tonic");
+            .expect("Failed to install ring as the default crypto provider");
     }
 
     let connector = hyper_rustls::HttpsConnectorBuilder::new()
         .with_tls_config(tls::config(&cert_path).await?)
-        .https_only()
-        .enable_all_versions()
+        .https_or_http()
+        .enable_http2()
         .build();
 
     let uri = Uri::from_str(&address).map_err(|e| InternalConnectError::InvalidAddress {
         address: address.to_string(),
         error: Box::new(e),
     })?;
-    let channel = Endpoint::new(uri.clone())?
-        .connect_with_connector(connector)
-        .await?;
-    let svc = MacaroonInterceptor { macaroon };
+
+    let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+        .http2_only(true)
+        .build(connector);
+
+    let svc = InterceptedService::new(client, MacaroonInterceptor { macaroon });
 
     let client = Client {
         #[cfg(feature = "lightningrpc")]
-        lightning: lnrpc::lightning_client::LightningClient::with_interceptor(
-            channel.clone(),
-            svc.clone(),
-        ),
+        lightning: lnrpc::lightning_client::LightningClient::with_origin(svc.clone(), uri.clone()),
         #[cfg(feature = "walletrpc")]
-        wallet: walletrpc::wallet_kit_client::WalletKitClient::with_interceptor(
-            channel.clone(),
+        wallet: walletrpc::wallet_kit_client::WalletKitClient::with_origin(
             svc.clone(),
+            uri.clone(),
         ),
         #[cfg(feature = "peersrpc")]
-        peers: peersrpc::peers_client::PeersClient::with_interceptor(channel.clone(), svc.clone()),
+        peers: peersrpc::peers_client::PeersClient::with_origin(svc.clone(), uri.clone()),
         #[cfg(feature = "signrpc")]
-        signer: signrpc::signer_client::SignerClient::with_interceptor(
-            channel.clone(),
-            svc.clone(),
-        ),
+        signer: signrpc::signer_client::SignerClient::with_origin(svc.clone(), uri.clone()),
         #[cfg(feature = "versionrpc")]
-        version: verrpc::versioner_client::VersionerClient::with_interceptor(
-            channel.clone(),
-            svc.clone(),
-        ),
+        version: verrpc::versioner_client::VersionerClient::with_origin(svc.clone(), uri.clone()),
         #[cfg(feature = "routerrpc")]
-        router: routerrpc::router_client::RouterClient::with_interceptor(
-            channel.clone(),
-            svc.clone(),
-        ),
+        router: routerrpc::router_client::RouterClient::with_origin(svc.clone(), uri.clone()),
         #[cfg(feature = "invoicesrpc")]
-        invoices: invoicesrpc::invoices_client::InvoicesClient::with_interceptor(
-            channel.clone(),
+        invoices: invoicesrpc::invoices_client::InvoicesClient::with_origin(
             svc.clone(),
+            uri.clone(),
         ),
         #[cfg(feature = "staterpc")]
-        state: staterpc::state_client::StateClient::with_interceptor(channel.clone(), svc.clone()),
+        state: staterpc::state_client::StateClient::with_origin(svc.clone(), uri.clone()),
     };
     Ok(client)
 }
@@ -368,10 +364,10 @@ mod tls {
         fn verify_server_cert(
             &self,
             end_entity: &CertificateDer<'_>,
-            intermediates: &[CertificateDer<'_>],
+            _intermediates: &[CertificateDer<'_>],
             _server_name: &ServerName<'_>,
             _ocsp_response: &[u8],
-            now: UnixTime,
+            _now: UnixTime,
         ) -> Result<ServerCertVerified, TLSError> {
             let end_trusted = anchor_from_trusted_cert(end_entity).map_err(|_| {
                 TLSError::InvalidCertificate(CertificateError::ApplicationVerificationFailure)

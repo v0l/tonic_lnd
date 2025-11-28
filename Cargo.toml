@@ -46,6 +46,7 @@ rustls = { version = "0.23", default-features = false } #only used for the custo
 rustls-pemfile = "2"
 rustls-webpki = { version = "0.103" }
 hyper-rustls = { version = "0.27", features = ["http1", "http2", "tls12"], default-features = false }
+hyper-util = { version = "0.1", features = ["client", "http1", "http2", "tokio"] }
 tonic = { version = "0.14", features = ["channel", "codegen", "_tls-any"], default-features = false }
 prost = "0.14"
 tonic-prost = "0.14"

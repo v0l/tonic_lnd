@@ -141,6 +141,7 @@ version = "0.2.0"
 dependencies = [
  "hex",
  "hyper-rustls",
+ "hyper-util",
  "prost",
  "rustls",
  "rustls-pemfile",
