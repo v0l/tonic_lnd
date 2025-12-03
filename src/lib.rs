@@ -225,18 +225,7 @@ where
     let macaroon = load_macaroon(macaroon_file).await?;
     let cert_path = cert_file.into();
 
-    // install a default provider
-    if CryptoProvider::get_default().is_none() {
-        #[cfg(all(feature = "tls-aws-lc-rs", not(feature = "tls-ring")))]
-        rustls::crypto::aws_lc_rs::default_provider()
-            .install_default()
-            .expect("Failed to install aws-lc-rs as the default crypto provider");
-        #[cfg(all(feature = "tls-ring", not(feature = "tls-aws-lc-rs")))]
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .expect("Failed to install ring as the default crypto provider");
-    }
-
+    setup_crypto_provider();
     let connector = hyper_rustls::HttpsConnectorBuilder::new()
         .with_tls_config(tls::config(&cert_path).await?)
         .https_or_http()
@@ -279,6 +268,20 @@ where
         state: staterpc::state_client::StateClient::with_origin(svc.clone(), uri.clone()),
     };
     Ok(client)
+}
+
+pub fn setup_crypto_provider() {
+    // install a default provider
+    if CryptoProvider::get_default().is_none() {
+        #[cfg(all(feature = "tls-aws-lc-rs", not(feature = "tls-ring")))]
+        rustls::crypto::aws_lc_rs::default_provider()
+            .install_default()
+            .expect("Failed to install aws-lc-rs as the default crypto provider");
+        #[cfg(all(feature = "tls-ring", not(feature = "tls-aws-lc-rs")))]
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("Failed to install ring as the default crypto provider");
+    }
 }
 
 mod tls {
